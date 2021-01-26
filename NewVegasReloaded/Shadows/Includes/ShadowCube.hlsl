@@ -9,7 +9,7 @@ float Lookup(samplerCUBE ShadowCubeMapBuffer, float3 LightDir, float Distance, f
 	
 }
 
-float GetLightAmount(samplerCUBE ShadowCubeMapBuffer, float4 WorldPos, float4 LightPos, float FarPlane, float Blend) {
+float GetLightAmount(samplerCUBE ShadowCubeMapBuffer, float4 WorldPos, float4 LightPos, float Blend) {
 	
 	if (TESR_ShadowData.x == -1.0f) return 1.0f; // Shadows are applied in post processing (ShadowsInteriors.fx.hlsl)
 	
@@ -23,7 +23,7 @@ float GetLightAmount(samplerCUBE ShadowCubeMapBuffer, float4 WorldPos, float4 Li
 	LightDir.z *= -1;
 	Distance = length(LightDir);
 	LightDir = LightDir / Distance;
-	Distance = Distance / FarPlane;
+	Distance = Distance / LightPos.w;
 	
 	Blend = max(1.0f - Blend, saturate(Distance) * TESR_ShadowData.y);
 	

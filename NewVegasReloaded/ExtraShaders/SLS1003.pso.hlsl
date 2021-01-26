@@ -5,8 +5,7 @@
 
 float4 TESR_ShadowData : register(c32);
 float4 TESR_ShadowLightPosition[4] : register(c33);
-float4 TESR_ShadowCubeMapFarPlanes : register(c37);
-float4 TESR_ShadowCubeMapBlend : register(c38);
+float4 TESR_ShadowCubeMapBlend : register(c37);
 
 sampler2D DiffuseMap : register(s0);
 samplerCUBE TESR_ShadowCubeMapBuffer0 : register(s14) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; ADDRESSW = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
@@ -39,7 +38,7 @@ VS_OUTPUT main(VS_INPUT IN) {
 	float Shadow;
 	
     r0 = tex2D(DiffuseMap, IN.DiffuseUV.xy);
-	Shadow = GetLightAmount(TESR_ShadowCubeMapBuffer0, IN.texcoord_6, TESR_ShadowLightPosition[0], TESR_ShadowCubeMapFarPlanes.x, TESR_ShadowCubeMapBlend.x);
+	Shadow = GetLightAmount(TESR_ShadowCubeMapBuffer0, IN.texcoord_6, TESR_ShadowLightPosition[0], TESR_ShadowCubeMapBlend.x);
     OUT.color_0.a = r0.w;
     OUT.color_0.rgb = r0.xyz * Shadow;
 

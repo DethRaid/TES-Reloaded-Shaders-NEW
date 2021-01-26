@@ -118,7 +118,9 @@ float GetLightAmountSkinFar(float4 ShadowPos) {
 }
 
 float GetLightAmountSkin(float4 ShadowPos, float4 ShadowPosFar) {
-					
+	
+	if (TESR_ShadowData.x == -1.0f) return 1.0f; // Shadows are applied in post processing (ShadowsExteriors.fx.hlsl)
+	
 	float Shadow = 0.0f;
 	float x;
 	float y;
@@ -142,7 +144,9 @@ float GetLightAmountSkin(float4 ShadowPos, float4 ShadowPosFar) {
 }
 
 float GetLightAmountGrass(float4 ShadowPos) {
-					
+	
+	if (TESR_ShadowData.x == -1.0f) return 1.0f; // Shadows are applied in post processing (ShadowsExteriors.fx.hlsl)
+	
 	float Shadow = 0.0f;
 	float x;
 	float y;
