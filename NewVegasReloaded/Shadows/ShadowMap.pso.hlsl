@@ -27,7 +27,7 @@ PS_OUTPUT main(VS_OUTPUT IN) {
 			discard;
 		}
 		
-		if (TESR_ShadowData.z < 0.5f) {	// Reflectance Shadow Maps are enabled. TODO: Is this check necessary?
+		if (abs(TESR_ShadowData.z - 1.0) < 0.001) {	// Reflectance Shadow Maps are enabled. TODO: Is this check necessary?
 			OUT.color_specular.rgb = DiffuseColor.rgb;
 
 			float3 Normals = tex2D(NormalsMap, IN.texcoord_1.xy).rgb;	// Don't try to unpack here, just pass the data down the rendering pipeline
