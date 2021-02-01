@@ -1,4 +1,4 @@
-// Image space shadows shader for Oblivion Reloaded
+// Image space shadows shader for TES Reloaded
 
 float4x4 TESR_WorldViewProjectionTransform;
 float4x4 TESR_ViewTransform;
@@ -44,30 +44,6 @@ VSOUT FrameVS(VSIN IN)
 	return OUT;
 }
 
-static const int cKernelSize = 7;
-
-static const float BlurWeights[cKernelSize] = 
-{
-    0.064759,
-    0.120985,
-    0.176033,
-    0.199471,
-    0.176033,
-    0.120985,
-    0.064759,
-};
- 
-static const float2 BlurOffsets[cKernelSize] = 
-{
-	float2(-3.0f * TESR_ReciprocalResolution.x, -3.0f * TESR_ReciprocalResolution.y),
-	float2(-2.0f * TESR_ReciprocalResolution.x, -2.0f * TESR_ReciprocalResolution.y),
-	float2(-1.0f * TESR_ReciprocalResolution.x, -1.0f * TESR_ReciprocalResolution.y),
-	float2( 0.0f * TESR_ReciprocalResolution.x,  0.0f * TESR_ReciprocalResolution.y),
-	float2( 1.0f * TESR_ReciprocalResolution.x,  1.0f * TESR_ReciprocalResolution.y),
-	float2( 2.0f * TESR_ReciprocalResolution.x,  2.0f * TESR_ReciprocalResolution.y),
-	float2( 3.0f * TESR_ReciprocalResolution.x,  3.0f * TESR_ReciprocalResolution.y),
-};
-
 float readDepth(in float2 coord : TEXCOORD0) {
 	float posZ = tex2D(TESR_DepthBuffer, coord).x;
 	posZ = Zmul / ((posZ * Zdiff) - farZ);
@@ -86,6 +62,22 @@ float3 toWorld(float2 tex) {
     return v;
 }
 
+bool IsOutsideNdcSpace(float4 Pos) {
+	return Pos.x < -1.0f || Pos.x > 1.0f ||
+        Pos.y < -1.0f || Pos.y > 1.0f ||
+        Pos.z <  0.0f || Pos.z > 1.0f;
+}
+
+float ShadowNearDistanceToWorldDistance(float Depth) {
+    static const float zNear = TESR_ShadowCameraToLightTransformNear._43 / TESR_ShadowCameraToLightTransformNear._33;
+    static const float zFar = (TESR_ShadowCameraToLightTransformNear._33 * nearZ) / (TESR_ShadowCameraToLightTransformNear._33 - 1.0f);
+
+    // bias it from [0, 1] to [-1, 1]
+    float LinearDepth = zNear / (zFar - Depth * (zFar - zNear)) * zFar;
+
+    return (LinearDepth * 2.0) - 1.0;
+}
+
 float LookupFar(float4 ShadowPos) {
 	float Shadow = tex2D(TESR_ShadowMapBufferFar, ShadowPos.xy).r;
 	if (Shadow < ShadowPos.z - BIAS) {
@@ -93,22 +85,6 @@ float LookupFar(float4 ShadowPos) {
 	}
 
 	return 1.0f;
-}
-
-float GetLightAmountFar(float4 ShadowPos) {
-	float x;
-	float y;
-	
-    if (ShadowPos.x < -1.0f || ShadowPos.x > 1.0f ||
-        ShadowPos.y < -1.0f || ShadowPos.y > 1.0f ||
-        ShadowPos.z <  0.0f || ShadowPos.z > 1.0f) {
-		return 1.0f;
-	}
-
-    ShadowPos.x = ShadowPos.x *  0.5f + 0.5f;
-    ShadowPos.y = ShadowPos.y * -0.5f + 0.5f;
-	
-	return LookupFar(ShadowPos);
 }
 
 float Lookup(float4 ShadowPos) {
@@ -120,24 +96,112 @@ float Lookup(float4 ShadowPos) {
 	return 1.0f;
 }
 
+/*!
+ * \brief Finds the best-fix shadow blocker for the current fragment
+ */
+float GetBlockerDepth(float4 ShadowPos) {
+	// If TESR_ShadowData.y is 0, this function will take one sample directly towards the lights
+	// If TESR_ShadowData.y is 1, this function will sample a 5x5 block of pixels centered on the light
+	// If TESR_ShadowData.y is 2, this funciton will sample a 7x7 block...
+	// TODO: Randomize the orientation of the block each fragment and maybe each frame
+
+	const float NEAR_SHADOW_MAP_EDGE_LENGTH = 4096.0f;	// Hardcoded for now - value came from my ini
+	const float NEAR_SHADOW_MAP_RADIUS = 2048.0f;	// Also hardcoded with a value that came from my personal ini
+
+	// Size of the blocker search kernel, in world units
+	const float BLOCKER_SEARCH_SIZE = 5.0f;
+
+	const float NumSamplesHalf = abs(TESR_ShadowData.y) * 2.0f;
+	const float NumSamples = NumSamplesHalf * 2.0f + 1.0f;
+
+	const float BlockerSearchSizeTexelspace = BLOCKER_SEARCH_SIZE * (NEAR_SHADOW_MAP_EDGE_LENGTH / NEAR_SHADOW_MAP_RADIUS);
+	const float BlockerSearchStepSize = BlockerSearchSizeTexelspace / NumSamples;
+	const float2 UvDistanceBetweenSamples = 1.0f / BlockerSearchStepSize;
+
+	float BlockerDepth = 0.0f;
+	for(int y = -NumSamplesHalf; y < NumSamplesHalf; y++) {
+		for(int x = -NumSamplesHalf; x < NumSamplesHalf; x++) {
+			// TODO: Rotate the sample offset by a random amount
+
+			const float2 SamplePos = ShadowPos.xy + float2(x, y) * UvDistanceBetweenSamples;
+
+			const float RawDepth = tex2D(TESR_ShadowMapBufferNear, SamplePos).r;
+            const float LinearDepth = ShadowNearDistanceToWorldDistance(RawDepth);
+
+            BlockerDepth += LinearDepth;
+		}
+	}
+
+    BlockerDepth /= NumSamples * NumSamples;
+
+    return BlockerDepth;
+}
+
+float PCSS(in float4 ShadowPos) {
+	const float NEAR_SHADOW_MAP_EDGE_LENGTH = 4096.0f;	// Hardcoded for now - value came from my ini
+	const float NEAR_SHADOW_MAP_RADIUS = 2048.0f;	// Also hardcoded with a value that came from my personal ini
+
+	const float BlockerDepth = GetBlockerDepth(ShadowPos);
+
+	const float NumSamplesHalf = abs(TESR_ShadowData.y) * 2.0f;
+	const float NumSamples = NumSamplesHalf * 2.0f + 1.0f;
+
+    // Angular diameter of the Earth's sun in radians
+    const float SUN_ANGULAR_DIAMETER = 0.00930842267730304f;
+
+    const float Theta = SUN_ANGULAR_DIAMETER * 0.5f;
+    const float PenumbraWidth = tan(Theta) * 2.0f * BlockerDepth;
+    const float PenumbraWidthTexelspace = PenumbraWidth * (NEAR_SHADOW_MAP_EDGE_LENGTH / NEAR_SHADOW_MAP_RADIUS);
+	const float2 UvDistanceBetweenSamples = NumSamples / PenumbraWidthTexelspace;
+
+	float Shadow = 0.0f;
+
+	for(int y = -NumSamplesHalf; y < NumSamplesHalf; y++) {
+		for(int x = -NumSamplesHalf; x < NumSamplesHalf; x++) {
+			// TODO: Rotate the sample offset by a random amount
+			const float2 SamplePos = ShadowPos.xy + float2(x, y) * UvDistanceBetweenSamples;
+			
+			Shadow += Lookup(float4(SamplePos, 0, 0));
+		}
+	}
+
+	Shadow /= NumSamples * NumSamples;
+
+	return Shadow;
+}
+
+float GetLightAmountFar(float4 ShadowPos) {
+	float x;
+	float y;
+	
+    if (IsOutsideNdcSpace(ShadowPos)) {
+		return 1.0f;
+	}
+
+    ShadowPos.x = ShadowPos.x * 0.5f + 0.5f;
+    ShadowPos.y = ShadowPos.y * -0.5f + 0.5f;
+	
+	return LookupFar(ShadowPos);
+}
+
 float GetLightAmount(float4 ShadowPos, float4 ShadowPosFar) {	
 	float x;
 	float y;
 	
-    if (ShadowPos.x < -1.0f || ShadowPos.x > 1.0f ||
-        ShadowPos.y < -1.0f || ShadowPos.y > 1.0f ||
-        ShadowPos.z <  0.0f || ShadowPos.z > 1.0f) {
+    if (IsOutsideNdcSpace(ShadowPos)) {
 		return GetLightAmountFar(ShadowPosFar);
 	}
  
-    ShadowPos.x = ShadowPos.x *  0.5f + 0.5f;
+    ShadowPos.x = ShadowPos.x * 0.5f + 0.5f;
     ShadowPos.y = ShadowPos.y * -0.5f + 0.5f;
 	
-	return Lookup(ShadowPos);
+	return PCSS(ShadowPos);
 }
 
 float4 Shadow( VSOUT IN ) : COLOR0 {	
 	float Shadow = 1.0f;
+	float3 IndirectIllumination = 0.0f;
+
 	float depth = readDepth(IN.UVCoord);
     float3 camera_vector = toWorld(IN.UVCoord) * depth;
     float4 world_pos = float4(TESR_CameraPosition.xyz + camera_vector, 1.0f);	
@@ -146,25 +210,13 @@ float4 Shadow( VSOUT IN ) : COLOR0 {
 		float4 pos = mul(world_pos, TESR_WorldViewProjectionTransform);
 
 		float4 ShadowNear = mul(pos, TESR_ShadowCameraToLightTransformNear);
-		ShadowNear /=  ShadowNear.w;
 
 		float4 ShadowFar = mul(pos, TESR_ShadowCameraToLightTransformFar);	
-		ShadowFar /= ShadowFar.W;
 
 		Shadow = GetLightAmount(ShadowNear, ShadowFar);
 	}
-    return float4(Shadow, Shadow, Shadow, 1.0f);
-	
-}
 
-float4 BlurPass(VSOUT IN, uniform float2 OffsetMask) : COLOR0
-{
-	float depth = readDepth01(IN.UVCoord);
-	if (depth == 0.0f || depth >= 0.9f) {
-		discard;
-	}
-
-    return float4(tex2D(TESR_RenderedBuffer, IN.UVCoord).rgb, 1.0f);
+    return float4(Shadow, Shadow, Shadow, 1.0f);	
 }
 
 float4 CombineShadow( VSOUT IN ) : COLOR0 {
@@ -177,7 +229,6 @@ float4 CombineShadow( VSOUT IN ) : COLOR0 {
 }
 
 technique {
-	
 	pass {
 		VertexShader = compile vs_3_0 FrameVS();
 		PixelShader = compile ps_3_0 Shadow();
@@ -185,17 +236,6 @@ technique {
 	
 	pass {
 		VertexShader = compile vs_3_0 FrameVS();
-		PixelShader = compile ps_3_0 BlurPass(OffsetMaskH);
-	}
-	
-	pass {
-		VertexShader = compile vs_3_0 FrameVS();
-		PixelShader = compile ps_3_0 BlurPass(OffsetMaskV);
-	}
-	
-	pass {
-		VertexShader = compile vs_3_0 FrameVS();
 		PixelShader = compile ps_3_0 CombineShadow();
 	}
-	
 }
