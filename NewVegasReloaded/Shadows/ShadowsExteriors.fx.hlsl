@@ -11,10 +11,10 @@ float4 TESR_ShadowData;
 float4 TESR_ReciprocalResolution;
 
 sampler2D TESR_RenderedBuffer : register(s0) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
-sampler2D TESR_DepthBuffer : register(s1) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
+sampler2D TESR_DepthBuffer : register(s1) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = POINT; MINFILTER = POINT; MIPFILTER = POINT; };
 sampler2D TESR_SourceBuffer : register(s2) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
-sampler2D TESR_ShadowMapBufferNear : register(s3) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
-sampler2D TESR_ShadowMapBufferFar : register(s4) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
+sampler2D TESR_ShadowMapBufferNear : register(s3) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = POINT; MINFILTER = POINT; MIPFILTER = POINT; };
+sampler2D TESR_ShadowMapBufferFar : register(s4) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = POINT; MINFILTER = POINT; MIPFILTER = POINT; };
 
 static const float nearZ = TESR_ProjectionTransform._43 / TESR_ProjectionTransform._33;
 static const float farZ = (TESR_ProjectionTransform._33 * nearZ) / (TESR_ProjectionTransform._33 - 1.0f);
@@ -68,14 +68,11 @@ bool IsOutsideNdcSpace(float4 Pos) {
         Pos.z <  0.0f || Pos.z > 1.0f;
 }
 
-float ShadowNearDistanceToWorldDistance(float Depth) {
-    static const float zNear = TESR_ShadowCameraToLightTransformNear._43 / TESR_ShadowCameraToLightTransformNear._33;
-    static const float zFar = (TESR_ShadowCameraToLightTransformNear._33 * nearZ) / (TESR_ShadowCameraToLightTransformNear._33 - 1.0f);
-
-    // bias it from [0, 1] to [-1, 1]
-    float LinearDepth = zNear / (zFar - Depth * (zFar - zNear)) * zFar;
-
-    return (LinearDepth * 2.0) - 1.0;
+float LinearizeShadowDepth(float Depth) {
+ 	float ZNear = TESR_ShadowCameraToLightTransformNear._43 / TESR_ShadowCameraToLightTransformNear._33;
+ 	float ZFar = (TESR_ShadowCameraToLightTransformNear._33 * ZNear) / (TESR_ShadowCameraToLightTransformNear._33 - 1.0f);
+	
+	return ZNear * ZFar / ((Depth * (ZFar - ZNear)) - ZFar);
 }
 
 float LookupFar(float4 ShadowPos) {
@@ -96,78 +93,115 @@ float Lookup(float4 ShadowPos) {
 	return 1.0f;
 }
 
-/*!
- * \brief Finds the best-fix shadow blocker for the current fragment
- */
-float GetBlockerDepth(float4 ShadowPos) {
-	// If TESR_ShadowData.y is 0, this function will take one sample directly towards the lights
-	// If TESR_ShadowData.y is 1, this function will sample a 5x5 block of pixels centered on the light
-	// If TESR_ShadowData.y is 2, this funciton will sample a 7x7 block...
-	// TODO: Randomize the orientation of the block each fragment and maybe each frame
+float rand(float2 co){
+  return frac(sin(dot(co.xy, float2(12.9898,78.233))) * 43758.5453);
+}
 
-	const float NEAR_SHADOW_MAP_EDGE_LENGTH = 4096.0f;	// Hardcoded for now - value came from my ini
-	const float NEAR_SHADOW_MAP_RADIUS = 2048.0f;	// Also hardcoded with a value that came from my personal ini
+float GetBlockerDepth(float4 ShadowPos) {
+	// TODO: Randomly rotate the search kernel for each fragment and maybe each frame
+
+	float NEAR_SHADOW_MAP_EDGE_LENGTH = 4096.0f;	// Hardcoded for now - value came from my ini
+	float NEAR_SHADOW_MAP_RADIUS = 2048.0f;	// Also hardcoded with a value that came from my personal ini
 
 	// Size of the blocker search kernel, in world units
-	const float BLOCKER_SEARCH_SIZE = 5.0f;
+	float BLOCKER_SEARCH_SIZE = 17.0f;
 
-	const float NumSamplesHalf = abs(TESR_ShadowData.y) * 2.0f;
-	const float NumSamples = NumSamplesHalf * 2.0f + 1.0f;
+	// 5x5 sample grid
+	float NumSamples = 5.0f;
 
-	const float BlockerSearchSizeTexelspace = BLOCKER_SEARCH_SIZE * (NEAR_SHADOW_MAP_EDGE_LENGTH / NEAR_SHADOW_MAP_RADIUS);
-	const float BlockerSearchStepSize = BlockerSearchSizeTexelspace / NumSamples;
-	const float2 UvDistanceBetweenSamples = 1.0f / BlockerSearchStepSize;
+	float CurFragShadowDepth = LinearizeShadowDepth(ShadowPos.z);
+
+	float BlockerSearchSizeTexelspace = BLOCKER_SEARCH_SIZE * (NEAR_SHADOW_MAP_EDGE_LENGTH / NEAR_SHADOW_MAP_RADIUS);
+	float BlockerSearchStepSize = BlockerSearchSizeTexelspace / NumSamples;
+	float UvDistanceBetweenSamples = BlockerSearchStepSize / NEAR_SHADOW_MAP_EDGE_LENGTH;
+
+	float TexelOffsetLowerBound = -floor(NumSamples / 2.0f);
+	float TexelOffsetUpperBound = -TexelOffsetLowerBound + 1.0f;
+	
+	float Angle = rand(ShadowPos.xy) * 2.0f * 3.14159f;
+	float SinTheta = sin(Angle);
+	float CosTheta = cos(Angle);
+	float2x2 RotationMatrix = float2x2(CosTheta, -SinTheta, SinTheta, CosTheta);
 
 	float BlockerDepth = 0.0f;
-	for(int y = -NumSamplesHalf; y < NumSamplesHalf; y++) {
-		for(int x = -NumSamplesHalf; x < NumSamplesHalf; x++) {
-			// TODO: Rotate the sample offset by a random amount
+	float NumBlockerSamples = 0.0f;
+	
+	for (int y = TexelOffsetLowerBound; y < TexelOffsetUpperBound; y++) {
+		for (int x = TexelOffsetLowerBound; x < TexelOffsetUpperBound; x++) {
+			float2 Offset = float2(x, y) * float2(UvDistanceBetweenSamples, UvDistanceBetweenSamples);
+			Offset = mul(Offset, RotationMatrix);
+			float2 SamplePos = ShadowPos.xy + Offset;
 
-			const float2 SamplePos = ShadowPos.xy + float2(x, y) * UvDistanceBetweenSamples;
+			float RawBlockerDepth = tex2D(TESR_ShadowMapBufferNear, SamplePos.xy).r;			
+			if(RawBlockerDepth < BIAS || RawBlockerDepth > 1.0 - BIAS) {
+				// Ignore places where the shadowmap is at its limits
+				continue;
+			}
 
-			const float RawDepth = tex2D(TESR_ShadowMapBufferNear, SamplePos).r;
-            const float LinearDepth = ShadowNearDistanceToWorldDistance(RawDepth);
+            float LinearBlockerDepth = LinearizeShadowDepth(RawBlockerDepth);
 
-            BlockerDepth += LinearDepth;
+			if (LinearBlockerDepth > CurFragShadowDepth - BIAS) {
+				BlockerDepth += LinearBlockerDepth;
+				NumBlockerSamples += 1.0f;
+			}
 		}
 	}
 
-    BlockerDepth /= NumSamples * NumSamples;
+	if (NumBlockerSamples > 0.0f) {
+    	BlockerDepth /= NumBlockerSamples;
+	}
 
     return BlockerDepth;
 }
 
 float PCSS(in float4 ShadowPos) {
-	const float NEAR_SHADOW_MAP_EDGE_LENGTH = 4096.0f;	// Hardcoded for now - value came from my ini
-	const float NEAR_SHADOW_MAP_RADIUS = 2048.0f;	// Also hardcoded with a value that came from my personal ini
+	float NEAR_SHADOW_MAP_EDGE_LENGTH = 4096.0f;	// Hardcoded for now - value came from my ini
+	float NEAR_SHADOW_MAP_RADIUS = 2048.0f;	// Also hardcoded with a value that came from my personal ini
 
-	const float BlockerDepth = GetBlockerDepth(ShadowPos);
+	float BlockerDepth = GetBlockerDepth(ShadowPos);
+	// return BlockerDepth;
 
-	const float NumSamplesHalf = abs(TESR_ShadowData.y) * 2.0f;
-	const float NumSamples = NumSamplesHalf * 2.0f + 1.0f;
+	// 9x9 sample grid
+	float NumSamples = 9.0f;
 
     // Angular diameter of the Earth's sun in radians
-    const float SUN_ANGULAR_DIAMETER = 0.00930842267730304f;
+    float SUN_ANGULAR_DIAMETER = 0.00930842267730304f;
 
-    const float Theta = SUN_ANGULAR_DIAMETER * 0.5f;
-    const float PenumbraWidth = tan(Theta) * 2.0f * BlockerDepth;
-    const float PenumbraWidthTexelspace = PenumbraWidth * (NEAR_SHADOW_MAP_EDGE_LENGTH / NEAR_SHADOW_MAP_RADIUS);
-	const float2 UvDistanceBetweenSamples = NumSamples / PenumbraWidthTexelspace;
+	float CurFragShadowDepth = LinearizeShadowDepth(ShadowPos.z);
+	
+	float Theta = SUN_ANGULAR_DIAMETER * 0.5f;
+    float PenumbraWidth = 91.0f * (CurFragShadowDepth - BlockerDepth) / BlockerDepth;	// tan(Theta) * 2.0f * BlockerDepth * 25.0f;
+	if(BlockerDepth == 0.0f) {
+		PenumbraWidth = 0.0f;
+	}
+	
+    float PenumbraWidthTexelspace = PenumbraWidth * (NEAR_SHADOW_MAP_EDGE_LENGTH / NEAR_SHADOW_MAP_RADIUS);
+	float UvPenumbraWidth = PenumbraWidthTexelspace / NEAR_SHADOW_MAP_EDGE_LENGTH;
+	float UvDistanceBetweenSamples = UvPenumbraWidth / NumSamples;
+	
+	float Angle = rand(ShadowPos.xy) * 2.0f * 3.14159f;
+	float SinTheta = sin(Angle);
+	float CosTheta = cos(Angle);
+	float2x2 RotationMatrix = float2x2(CosTheta, -SinTheta, SinTheta, CosTheta);
 
-	float Shadow = 0.0f;
+	float IncomingLight = 0.0f;
 
-	for(int y = -NumSamplesHalf; y < NumSamplesHalf; y++) {
-		for(int x = -NumSamplesHalf; x < NumSamplesHalf; x++) {
-			// TODO: Rotate the sample offset by a random amount
-			const float2 SamplePos = ShadowPos.xy + float2(x, y) * UvDistanceBetweenSamples;
+	float TexelOffsetLowerBound = -floor(NumSamples / 2.0f);
+	float TexelOffsetUpperBound = -TexelOffsetLowerBound + 1.0f;
+
+	for (int y = TexelOffsetLowerBound; y < TexelOffsetUpperBound; y++) {
+		for (int x = TexelOffsetLowerBound; x < TexelOffsetUpperBound; x++) {
+			float2 Offset = float2(x, y) * float2(UvDistanceBetweenSamples, UvDistanceBetweenSamples);
+			Offset = mul(Offset, RotationMatrix);
+			float2 SamplePos = ShadowPos.xy + Offset;
 			
-			Shadow += Lookup(float4(SamplePos, 0, 0));
+			IncomingLight += Lookup(float4(SamplePos, ShadowPos.z, 0));
 		}
 	}
 
-	Shadow /= NumSamples * NumSamples;
+	IncomingLight /= NumSamples * NumSamples;
 
-	return Shadow;
+	return IncomingLight;
 }
 
 float GetLightAmountFar(float4 ShadowPos) {
