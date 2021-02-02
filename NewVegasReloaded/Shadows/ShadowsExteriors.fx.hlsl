@@ -93,8 +93,8 @@ float Lookup(float4 ShadowPos) {
 	return 1.0f;
 }
 
-float rand(float2 co){
-  return frac(sin(dot(co.xy, float2(12.9898,78.233))) * 43758.5453);
+float rand(float2 co) {
+  return frac(sin(dot(co.xy, float2(12.9898, 78.233))) * 43758.5453);
 }
 
 float GetBlockerDepth(float4 ShadowPos) {
@@ -170,7 +170,7 @@ float PCSS(in float4 ShadowPos) {
 	float CurFragShadowDepth = LinearizeShadowDepth(ShadowPos.z);
 	
 	float Theta = SUN_ANGULAR_DIAMETER * 0.5f;
-    float PenumbraWidth = 91.0f * (CurFragShadowDepth - BlockerDepth) / BlockerDepth;	// tan(Theta) * 2.0f * BlockerDepth * 25.0f;
+    float PenumbraWidth = 91.0f * (CurFragShadowDepth - BlockerDepth) / BlockerDepth;
 	if(BlockerDepth == 0.0f) {
 		PenumbraWidth = 0.0f;
 	}

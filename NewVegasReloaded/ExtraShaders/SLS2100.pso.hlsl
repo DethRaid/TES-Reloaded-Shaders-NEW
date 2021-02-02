@@ -10,6 +10,7 @@ float4 PSLightColor[10] : register(c3);
 float4 TESR_FogColor : register(c15);
 float4 PSLightDir : register(c18);
 float4 TESR_ShadowData : register(c32);
+// row_major float4x4 TESR_ShadowCameraToLightTransform[2] : register(c35);
 sampler2D TESR_ShadowMapBufferNear : register(s14) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
 sampler2D TESR_ShadowMapBufferFar : register(s15) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
 
@@ -43,6 +44,7 @@ struct PS_OUTPUT {
 };
 
 #include "../Shadows/Includes/Shadow.hlsl"
+
 
 PS_OUTPUT main(VS_INPUT IN) {
     PS_OUTPUT OUT;

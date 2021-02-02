@@ -66,8 +66,7 @@ VS_OUTPUT main(VS_INPUT IN) {
     OUT.color_1.rgb = FogColor.rgb;
     OUT.texcoord_0.xy = IN.LTEXCOORD_0.xy;
     OUT.texcoord_6 = mul(r0, TESR_ShadowCameraToLightTransform[0]);
-	OUT.texcoord_7 = mul(r0, TESR_ShadowCameraToLightTransform[1]);
-	
+	OUT.texcoord_7 = mul(r0, TESR_ShadowCameraToLightTransform[1]);	
     return OUT;
 };
 
