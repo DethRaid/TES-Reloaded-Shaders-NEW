@@ -10,7 +10,6 @@ float4 PSLightColor[10] : register(c3);
 float4 TESR_FogColor : register(c15);
 float4 PSLightDir : register(c18);
 float4 TESR_ShadowData : register(c32);
-// row_major float4x4 TESR_ShadowCameraToLightTransform[2] : register(c35);
 sampler2D TESR_ShadowMapBufferNear : register(s14) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
 sampler2D TESR_ShadowMapBufferFar : register(s15) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
 
@@ -37,6 +36,7 @@ struct VS_INPUT {
     float3 texcoord_5 : TEXCOORD5_centroid;
 	float4 texcoord_6 : TEXCOORD6;
     float4 texcoord_7 : TEXCOORD7;
+    float2 ShadowNearFar : TEXCOORD8;
 };
 
 struct PS_OUTPUT {
@@ -80,7 +80,7 @@ PS_OUTPUT main(VS_INPUT IN) {
     q3.xyz = (IN.LCOLOR_0.z * r5.xyz) + ((IN.LCOLOR_0.x * r4.xyz) + (r3.xyz * IN.LCOLOR_0.y));
     r0.xyz = (2 * ((r1.xyz - 0.5) * IN.LCOLOR_0.x)) + (2 * ((r0.xyz - 0.5) * IN.LCOLOR_0.y));	// [0,1] to [-1,+1]
     r1.xyz = normalize((2 * ((r2.xyz - 0.5) * IN.LCOLOR_0.z)) + r0.xyz);	// [0,1] to [-1,+1]
-    q4.xyz = ((GetLightAmount(IN.texcoord_6, IN.texcoord_7) * (shades(r1.xyz, m23.xyz) * PSLightColor[0].rgb)) + AmbientColor.rgb) * q3.xyz;
+    q4.xyz = ((GetLightAmount(IN.texcoord_6, IN.texcoord_7, IN.ShadowNearFar.x, IN.ShadowNearFar.y) * (shades(r1.xyz, m23.xyz) * PSLightColor[0].rgb)) + AmbientColor.rgb) * q3.xyz;
     q5.xyz = (IN.BaseUV.z * (TESR_FogColor.xyz - (IN.texcoord_1.xyz * q4.xyz))) + (q4.xyz * IN.texcoord_1.xyz);
     OUT.color_0.a = 1;
     OUT.color_0.rgb = q5.xyz;

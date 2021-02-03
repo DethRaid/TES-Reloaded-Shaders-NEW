@@ -45,11 +45,6 @@ struct VS_OUTPUT {
     float3 texcoord_5 : TEXCOORD5;
 	float4 texcoord_6 : TEXCOORD6;
     float4 texcoord_7 : TEXCOORD7;
-
-    // error X5622: Too many output registers declared (12).  When no output register has been declared with the semantic 'psize0', 11 o# registers are available.  When an o# register has been declared with the semantic 'psize0' (same as 'psize'), 12 registers are available.
-    // float2 ShadowNearFar : TEXCOORD8;
-
-    // TODO: Repack the vertex shader output struct to make room for the shadow data
 };
 
 // Code:

@@ -42,6 +42,7 @@ struct VS_OUTPUT {
     float4 texcoord_1 : TEXCOORD1;
 	float4 texcoord_6 : TEXCOORD6;
 	float4 texcoord_7 : TEXCOORD7;
+    float2 ShadowNearFar : TEXCOORD8;
 };
 
 // Code:
@@ -66,7 +67,11 @@ VS_OUTPUT main(VS_INPUT IN) {
     OUT.color_1.rgb = FogColor.rgb;
     OUT.texcoord_0.xy = IN.LTEXCOORD_0.xy;
     OUT.texcoord_6 = mul(r0, TESR_ShadowCameraToLightTransform[0]);
-	OUT.texcoord_7 = mul(r0, TESR_ShadowCameraToLightTransform[1]);	
+	OUT.texcoord_7 = mul(r0, TESR_ShadowCameraToLightTransform[1]);
+    
+ 	OUT.ShadowNearFar.x = TESR_ShadowCameraToLightTransform[0]._43 / TESR_ShadowCameraToLightTransform[0]._33;
+ 	OUT.ShadowNearFar.y = (TESR_ShadowCameraToLightTransform[0]._33 * OUT.ShadowNearFar.x) / (TESR_ShadowCameraToLightTransform[0]._33 - 1.0f);
+	
     return OUT;
 };
 

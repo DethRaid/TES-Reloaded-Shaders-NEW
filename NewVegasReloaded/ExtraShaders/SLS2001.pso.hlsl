@@ -8,7 +8,6 @@ sampler2D BaseMap : register(s0);
 sampler2D NormalMap : register(s1);
 float4 PSLightColor[10] : register(c3);
 float4 TESR_ShadowData : register(c32);
-// row_major float4x4 TESR_ShadowCameraToLightTransform[2] : register(c35);
 sampler2D TESR_ShadowMapBufferNear : register(s14) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
 sampler2D TESR_ShadowMapBufferFar : register(s15) = sampler_state { ADDRESSU = CLAMP; ADDRESSV = CLAMP; MAGFILTER = LINEAR; MINFILTER = LINEAR; MIPFILTER = LINEAR; };
 
@@ -32,6 +31,7 @@ struct VS_INPUT {
     float3 texcoord_1 : TEXCOORD1_centroid;
 	float4 texcoord_6 : TEXCOORD6;
 	float4 texcoord_7 : TEXCOORD7;
+    float2 ShadowNearFar : TEXCOORD8;
 };
 
 struct PS_OUTPUT {
@@ -57,7 +57,7 @@ PS_OUTPUT main(VS_INPUT IN) {
     r1.xyzw = tex2D(BaseMap, IN.BaseUV.xy);
     q3.xyz = r1.xyz * IN.LCOLOR_0.xyz;
     r1.w = r1.w * AmbientColor.a;
-    q1.xyz = (GetLightAmount(IN.texcoord_6, IN.texcoord_7) * (shades(normalize(expand(noxel0.xyz)), IN.texcoord_1.xyz) * PSLightColor[0].rgb)) + AmbientColor.rgb;
+    q1.xyz = (GetLightAmount(IN.texcoord_6, IN.texcoord_7, IN.ShadowNearFar.x, IN.ShadowNearFar.y) * (shades(normalize(expand(noxel0.xyz)), IN.texcoord_1.xyz) * PSLightColor[0].rgb)) + AmbientColor.rgb;
     r1.xyz = (IN.LCOLOR_1.w * (IN.LCOLOR_1.xyz - (q3.xyz * max(q1.xyz, 0)))) + (max(q1.xyz, 0) * q3.xyz);
     OUT.color_0.rgba = r1.xyzw;
 

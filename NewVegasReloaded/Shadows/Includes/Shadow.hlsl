@@ -1,10 +1,7 @@
 
 static const float BIAS = 0.001f;
 
-float LinearizeShadowDepth(in float Depth) {
- 	float ZNear = TESR_ShadowCameraToLightTransform[0]._43 / TESR_ShadowCameraToLightTransform[0]._33;
- 	float ZFar = (TESR_ShadowCameraToLightTransform[0]._33 * ZNear) / (TESR_ShadowCameraToLightTransform[0]._33 - 1.0f);
-
+float LinearizeShadowDepth(in float Depth, in float ZNear, in float ZFar) {
 	// float NdcDepth = (Depth * 2.0) - 1.0;
 	return ZNear * ZFar / ((Depth * (ZFar - ZNear)) - ZFar);
 }
@@ -29,7 +26,7 @@ float rand(in float2 co){
   return frac(sin(dot(co.xy, float2(12.9898,78.233))) * 43758.5453);
 }
 
-float GetBlockerDepth(in float4 ShadowPos) {
+float GetBlockerDepth(in float4 ShadowPos, in float Near, in float Far) {
 	// TODO: Randomly rotate the search kernel for each fragment and maybe each frame
 
 	float NEAR_SHADOW_MAP_EDGE_LENGTH = 4096.0f;	// Hardcoded for now - value came from my ini
@@ -39,9 +36,9 @@ float GetBlockerDepth(in float4 ShadowPos) {
 	float BLOCKER_SEARCH_SIZE = 17.0f;
 
 	// 5x5 sample grid
-	float NumSamples = 5.0f;
+	float NumSamples = 3.0f;
 
-	float CurFragShadowDepth = LinearizeShadowDepth(ShadowPos.z);
+	float CurFragShadowDepth = LinearizeShadowDepth(ShadowPos.z, Near, Far);
 
 	float BlockerSearchSizeTexelspace = BLOCKER_SEARCH_SIZE * (NEAR_SHADOW_MAP_EDGE_LENGTH / NEAR_SHADOW_MAP_RADIUS);
 	float BlockerSearchStepSize = BlockerSearchSizeTexelspace / NumSamples;
@@ -70,7 +67,7 @@ float GetBlockerDepth(in float4 ShadowPos) {
 				continue;
 			}
 
-            float LinearBlockerDepth = LinearizeShadowDepth(RawBlockerDepth);
+            float LinearBlockerDepth = LinearizeShadowDepth(RawBlockerDepth, Near, Far);
 
 			if (LinearBlockerDepth > CurFragShadowDepth - BIAS) {
 				BlockerDepth += LinearBlockerDepth;
@@ -86,20 +83,20 @@ float GetBlockerDepth(in float4 ShadowPos) {
     return BlockerDepth;
 }
 
-float PCSS(in float4 ShadowPos) {
+float PCSS(in float4 ShadowPos, in float Near, in float Far) {
 	float NEAR_SHADOW_MAP_EDGE_LENGTH = 4096.0f;	// Hardcoded for now - value came from my ini
 	float NEAR_SHADOW_MAP_RADIUS = 2048.0f;	// Also hardcoded with a value that came from my personal ini
 
-	float BlockerDepth = GetBlockerDepth(ShadowPos);
+	float BlockerDepth = GetBlockerDepth(ShadowPos, Near, Far);
 	// return BlockerDepth;
 
 	// 9x9 sample grid
-	float NumSamples = 9.0f;
+	float NumSamples = 7.0f;
 
     // Angular diameter of the Earth's sun in radians
     float SUN_ANGULAR_DIAMETER = 0.00930842267730304f;
 
-	float CurFragShadowDepth = LinearizeShadowDepth(ShadowPos.z);
+	float CurFragShadowDepth = LinearizeShadowDepth(ShadowPos.z, Near, Far);
 	
 	float Theta = SUN_ANGULAR_DIAMETER * 0.5f;
     float PenumbraWidth = 91.0f * (CurFragShadowDepth - BlockerDepth) / BlockerDepth;
@@ -159,7 +156,7 @@ float GetLightAmountFar(float4 ShadowPos) {
 	
 }
 
-float GetLightAmount(float4 ShadowPos, float4 ShadowPosFar) {
+float GetLightAmount(float4 ShadowPos, float4 ShadowPosFar, float Near, float Far) {
 	
 	if (TESR_ShadowData.x == -1.0f) return 1.0f; // Shadows are applied in post processing (ShadowsExteriors.fx.hlsl)
 	
@@ -208,7 +205,7 @@ float GetLightAmount(float4 ShadowPos, float4 ShadowPosFar) {
 		Shadow /= 36.0f;
 	}
 	else {
-		Shadow = PCSS(ShadowPos);
+		Shadow = PCSS(ShadowPos, Near, Far);
 	}
 	return Shadow;
 	
