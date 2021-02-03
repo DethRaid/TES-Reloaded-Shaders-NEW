@@ -41,7 +41,10 @@ def compile_shader(shader, profile):
 def compile_all_shaders_in_folder(folder):
     for subdir, dirs, files in os.walk(folder):
         for shader_file in files:
-            if shader_file.endswith('.vso.hlsl'):
+            if shader_file.endswith('.fx.hlsl'):
+               compile_shader(f"{subdir}/{shader_file}", "fx_2_0")
+            
+            elif shader_file.endswith('.vso.hlsl'):
                 compile_shader(f"{subdir}/{shader_file}", 'vs_3_0')
 
             elif shader_file.endswith('.pso.hlsl'):
