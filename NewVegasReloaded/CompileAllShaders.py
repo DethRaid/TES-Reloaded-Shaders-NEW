@@ -1,28 +1,28 @@
 #!/python3
 
-'''Compiles all the .vso.hlsl and .pso.hlsl files in this directory and all subdirectories
+'''Compiles all the .vso.hlsl and .pso.hlsl filenames in this directory and all subdirectories
 '''
 
+from multiprocessing import Pool
 import os
 from pathlib import Path
 import subprocess
+import time
 
 
 fxc = r"C:\Program Files (x86)\Microsoft DirectX SDK (June 2010)\Utilities\bin\x86\fxc.exe"
 
 
-def compile_effect(effect, parent_directory):
-    print(f"Compiling effect {parent_directory}/{effect}")
-
-
 def compile_shader(shader, profile):
-    print(f"Compiling shader {shader}")
 
-    output_file = shader[:-5]
+    print(f'Beginning compile of {shader}')
+    start = time.process_time()
 
-    result = subprocess.run([fxc, '/T', profile, '/Fo', output_file, shader], shell = True, capture_output = True, text = True)
+    output_file_name = shader[:-5]
+    log_file_name = shader.replace('.hlsl', '.log')
+
+    result = subprocess.run([fxc, '/T', profile, '/Fo', output_file_name, shader], shell = True, capture_output = True)
     if result.returncode != 0:
-        log_file_name = shader.replace('.hlsl', '.log')
         with open(log_file_name, 'w') as log_file:
             if result.stdout is not None:
                 log_file.write('stdout:')
@@ -32,23 +32,39 @@ def compile_shader(shader, profile):
                 log_file.write('stderr:')
                 log_file.write(str(result.stderr))
 
-        print(f"Errors when compiling shader! Check file {log_file_name} for details")
+        print(f'Failed to compile {shader}! Check file {log_file_name} for details')
 
     else:
-        print('Compilation successful!')
+        end = time.process_time()
+        print(f'Compiled {shader} in {end - start} seconds')
 
 
 def compile_all_shaders_in_folder(folder):
-    for subdir, dirs, files in os.walk(folder):
-        for shader_file in files:
+    pool = Pool()
+
+    for dirpath, dirnames, filenames in os.walk(folder):
+        all_shaders = list()
+
+        for shader_file in filenames:
+            if shader_file.endswith('.fx.hlsl'):
+                print(f'Compiling {shader_file} as an effect')
+                all_shaders.append((f'{dirpath}/{shader_file}', 'fx_2_0'))
+
             if shader_file.endswith('.vso.hlsl'):
-                compile_shader(f"{subdir}/{shader_file}", 'vs_3_0')
+                print(f'Compiling {shader_file} as a vertex shader')
+                all_shaders.append((f'{dirpath}/{shader_file}', 'vs_3_0'))
 
             elif shader_file.endswith('.pso.hlsl'):
-                compile_shader(f"{subdir}/{shader_file}", 'ps_3_0')
-        
-        for dir in dirs:
+                print(f'Compiling {shader_file} as a pixel shader')
+                all_shaders.append((f'{dirpath}/{shader_file}', 'ps_3_0'))
+    
+        if len(all_shaders) > 0:
+            pool.starmap_async(compile_shader, all_shaders)
+
+        for dir in dirnames:
             compile_all_shaders_in_folder(dir)
+    
+    pool.close()
 
 
 if __name__ == '__main__':
